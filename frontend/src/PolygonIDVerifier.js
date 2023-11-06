@@ -47,9 +47,13 @@ function PolygonIDVerifier({
 
   const socket = io(serverUrl);
 
+  console.log(socket)
+
   useEffect(() => {
     socket.on("connect", () => {
       setSessionId(socket.id);
+
+      console.log(`connected to socket ${socket.id}`);
 
       // only watch this session's events
       socket.on(socket.id, (arg) => {

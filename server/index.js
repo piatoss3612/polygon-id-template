@@ -18,8 +18,7 @@ app.use(
 
 app.get("/", (req, res) => {
   res.send(
-    `Welcome to your backend Polygon ID verifier server! There are ${
-      Object.keys(apiPath).length
+    `Welcome to your backend Polygon ID verifier server! There are ${Object.keys(apiPath).length
     } routes available: ${Object.values(apiPath).join(" and ")}.`
   );
 });
@@ -33,6 +32,8 @@ const io = new Server(server, {
     origin: process.env.FRONTEND_URL,
   },
 });
+
+console.log(io)
 
 // save auth qr requests
 const authRequests = new Map();
