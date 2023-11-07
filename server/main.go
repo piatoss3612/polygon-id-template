@@ -7,12 +7,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/google/uuid"
 
 	"github.com/iden3/go-circuits/v2"
 	auth "github.com/iden3/go-iden3-auth/v2"
@@ -41,7 +43,10 @@ func main() {
 	}
 }
 
-var requestMap = make(map[string]interface{})
+var (
+	hub        = NewHub()
+	requestMap = make(map[string]interface{})
+)
 
 func GetAuthRequest(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
@@ -50,25 +55,15 @@ func GetAuthRequest(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("Session ID: ", sessionId)
 
-	conn, ok := ClientMap[ID(sessionId)]
-	if !ok || conn == nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
+	hub.send <- Message{
+		Type: EventMessage,
+		ID:   ID(sessionId),
+		Event: Event{
+			Fn:     "getAuthQr",
+			Status: InProgress,
+			Data:   sessionId,
+		},
 	}
-
-	go func() {
-		err := conn.WriteJSON(Message{
-			Type: EventMessage,
-			Event: Event{
-				Fn:     "getAuthQr",
-				Status: InProgress,
-				Data:   sessionId,
-			},
-		})
-		if err != nil {
-			log.Println(err)
-		}
-	}()
 
 	uri := fmt.Sprintf("%s/api/verification-callback?sessionId=%s",
 		os.Getenv("HOSTED_SERVER_URL"),
@@ -104,19 +99,15 @@ func GetAuthRequest(w http.ResponseWriter, r *http.Request) {
 
 	requestMap[sessionId] = request
 
-	go func() {
-		err := conn.WriteJSON(Message{
-			Type: EventMessage,
-			Event: Event{
-				Fn:     "getAuthQr",
-				Status: Done,
-				Data:   request,
-			},
-		})
-		if err != nil {
-			log.Println(err)
-		}
-	}()
+	hub.send <- Message{
+		Type: EventMessage,
+		ID:   ID(sessionId),
+		Event: Event{
+			Fn:     "getAuthQr",
+			Status: Done,
+			Data:   request,
+		},
+	}
 
 	msgBytes, _ := json.Marshal(request)
 
@@ -128,12 +119,6 @@ func GetAuthRequest(w http.ResponseWriter, r *http.Request) {
 func Callback(w http.ResponseWriter, r *http.Request) {
 	sessionId := r.URL.Query().Get("sessionId")
 
-	conn, ok := ClientMap[ID(sessionId)]
-	if !ok || conn == nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
 	tokenBytes, _ := io.ReadAll(r.Body)
 	defer r.Body.Close()
 
@@ -143,19 +128,15 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() {
-		err := conn.WriteJSON(Message{
-			Type: EventMessage,
-			Event: Event{
-				Fn:     "handleVerification",
-				Status: InProgress,
-				Data:   authRequest,
-			},
-		})
-		if err != nil {
-			log.Println(err)
-		}
-	}()
+	hub.send <- Message{
+		Type: EventMessage,
+		ID:   ID(sessionId),
+		Event: Event{
+			Fn:     "handleVerification",
+			Status: InProgress,
+			Data:   authRequest,
+		},
+	}
 
 	ipfsURL := "https://ipfs.io"
 	contractAddress := "0x134B1BE34911E39A8397ec6289782989729807a4"
@@ -181,7 +162,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		auth.WithIPFSGateway(ipfsURL),
 	)
 	if err != nil {
-		log.Println("here1234", err)
+		log.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -193,24 +174,20 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		pubsignals.WithAcceptedStateTransitionDelay(time.Minute*5),
 	)
 	if err != nil {
-		log.Println("here12345678", err)
+		log.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	go func() {
-		err = conn.WriteJSON(Message{
-			Type: EventMessage,
-			Event: Event{
-				Fn:     "handleVerification",
-				Status: Done,
-				Data:   authResponse,
-			},
-		})
-		if err != nil {
-			log.Println(err)
-		}
-	}()
+	hub.send <- Message{
+		Type: EventMessage,
+		ID:   ID(sessionId),
+		Event: Event{
+			Fn:     "handleVerification",
+			Status: Done,
+			Data:   authResponse,
+		},
+	}
 
 	userID := authResponse.From
 
@@ -219,4 +196,37 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(messageBytes)
+}
+
+func ServeWs(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		http.Error(w, "Could not open websocket connection", http.StatusBadRequest)
+		return
+	}
+
+	id := uuid.New().String()
+
+	client := &Client{
+		hub:  hub,
+		id:   ID(id),
+		conn: conn,
+		send: make(chan Message, 256),
+		mu:   &sync.Mutex{},
+	}
+
+	hub.register <- RegisterRequest{
+		ID:     ID(id),
+		Client: client,
+	}
+
+	go client.writePump()
+	go client.readPump()
+
+	msg := Message{
+		Type: IDMessage,
+		ID:   ID(id),
+	}
+
+	client.send <- msg
 }
