@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Modal,
   ModalOverlay,
@@ -14,8 +14,6 @@ import {
 } from "@chakra-ui/react";
 import { ExternalLinkIcon } from "@chakra-ui/icons";
 import QRCode from "react-qr-code";
-
-import { io } from "socket.io-client";
 
 const linkDownloadPolygonIDWalletApp =
   "https://0xpolygonid.github.io/tutorials/wallet/wallet-overview/#quick-start";
@@ -33,8 +31,10 @@ function PolygonIDVerifier({
   const [isHandlingVerification, setIsHandlingVerification] = useState(false);
   const [verificationCheckComplete, setVerificationCheckComplete] =
     useState(false);
-  const [verificationMessage, setVerfificationMessage] = useState("");
+  const [verificationMessage, setVerificationMessage] = useState("");
   const [socketEvents, setSocketEvents] = useState([]);
+
+  const socket = useRef();
 
   // serverUrl is localServerURL if not running in prod
   // Note: the verification callback will always come from the publicServerURL
@@ -45,21 +45,42 @@ function PolygonIDVerifier({
   const getQrCodeApi = (sessionId) =>
     serverUrl + `/api/get-auth-qr?sessionId=${sessionId}`;
 
-  const socket = io(serverUrl);
-
-  console.log(socket)
-
   useEffect(() => {
-    socket.on("connect", () => {
-      setSessionId(socket.id);
 
-      console.log(`connected to socket ${socket.id}`);
+    const _socket = new WebSocket("ws://" + "localhost:8080" + "/ws");
+    socket.current = _socket;
 
-      // only watch this session's events
-      socket.on(socket.id, (arg) => {
-        setSocketEvents((socketEvents) => [...socketEvents, arg]);
-      });
-    });
+    _socket.onopen = (e) => {
+      console.log("connected to socket");
+      console.log(e)
+    }
+
+    _socket.onclose = (e) => {
+      console.log("disconnected from socket")
+      console.log(e)
+    }
+
+    _socket.onmessage = (e) => {
+      let msg = JSON.parse(e.data);
+
+      console.log(msg)
+
+      switch (msg.type) {
+        case "id":
+          setSessionId(msg.id);
+          break;
+        case "event":
+          setSocketEvents((socketEvents) => [...socketEvents, msg.event]);
+          break;
+        default:
+          console.log("unknown message type:", msg.type);
+      }
+    }
+
+    _socket.onerror = (e) => {
+      console.log("error")
+      console.log(e)
+    }
   }, []);
 
   useEffect(() => {
@@ -79,6 +100,8 @@ function PolygonIDVerifier({
     if (socketEvents.length) {
       const currentSocketEvent = socketEvents[socketEvents.length - 1];
 
+      console.log(currentSocketEvent)
+
       if (currentSocketEvent.fn === "handleVerification") {
         if (currentSocketEvent.status === "IN_PROGRESS") {
           setIsHandlingVerification(true);
@@ -86,13 +109,13 @@ function PolygonIDVerifier({
           setIsHandlingVerification(false);
           setVerificationCheckComplete(true);
           if (currentSocketEvent.status === "DONE") {
-            setVerfificationMessage("✅ Verified proof");
+            setVerificationMessage("✅ Verified proof");
             setTimeout(() => {
               reportVerificationResult(true);
             }, "2000");
-            socket.close();
+            socket.current.close();
           } else {
-            setVerfificationMessage("❌ Error verifying VC");
+            setVerificationMessage("❌ Error verifying VC");
           }
         }
       }

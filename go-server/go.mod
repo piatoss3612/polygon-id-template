@@ -6,11 +6,13 @@ require (
 	github.com/ethereum/go-ethereum v1.11.5
 	github.com/go-chi/chi/v5 v5.0.10
 	github.com/go-chi/cors v1.2.1
-	github.com/googollee/go-socket.io v1.8.0-rc.1
+	github.com/google/uuid v1.4.0
+	github.com/gorilla/websocket v1.5.1
 	github.com/iden3/go-circuits/v2 v2.0.0
 	github.com/iden3/go-iden3-auth/v2 v2.0.0-beta.2
 	github.com/iden3/iden3comm/v2 v2.0.0
 	github.com/joho/godotenv v1.5.1
+	github.com/rs/cors v1.7.0
 )
 
 require (
@@ -25,10 +27,6 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
-	github.com/gofrs/uuid v4.4.0+incompatible // indirect
-	github.com/gomodule/redigo v1.8.9 // indirect
-	github.com/google/uuid v1.3.0 // indirect
-	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/holiman/uint256 v1.2.2-0.20230321075855-87b91420868c // indirect
 	github.com/iden3/contracts-abi/state/go/abi v1.0.0-beta.3 // indirect
 	github.com/iden3/go-iden3-core/v2 v2.0.0 // indirect
@@ -77,9 +75,10 @@ require (
 	github.com/tklauser/numcpus v0.6.0 // indirect
 	github.com/whyrusleeping/tar-utils v0.0.0-20201201191210-20a61371de5b // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
-	golang.org/x/crypto v0.12.0 // indirect
+	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
-	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.1 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
