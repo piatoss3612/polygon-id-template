@@ -33,8 +33,10 @@ func main() {
 	mux.Use(cors.AllowAll().Handler)
 
 	mux.HandleFunc("/ws", ServeWs)
+	mux.Get("/api/get-login-qr", GetLoginRequest)
 	mux.Get("/api/get-auth-qr", GetAuthRequest)
-	mux.Post("/api/verification-callback", Callback)
+	mux.Post("/api/login-callback", LoginCallback)
+	mux.Post("/api/verification-callback", VerificationCallback)
 
 	srv := &http.Server{Addr: ":8080", Handler: mux}
 
@@ -47,6 +49,142 @@ var (
 	hub        = NewHub()
 	requestMap = make(map[string]interface{})
 )
+
+func GetLoginRequest(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	sessionId := r.URL.Query().Get("sessionId")
+
+	log.Println("Session ID: ", sessionId)
+
+	hub.send <- Message{
+		Type: EventMessage,
+		ID:   ID(sessionId),
+		Event: Event{
+			Fn:     "getLoginQr",
+			Status: InProgress,
+			Data:   sessionId,
+		},
+	}
+
+	uri := fmt.Sprintf("%s/api/login-callback?sessionId=%s",
+		os.Getenv("HOSTED_SERVER_URL"),
+		sessionId,
+	)
+
+	audience := "did:polygonid:polygon:mumbai:2qDyy1kEo2AYcP3RT4XGea7BtxsY285szg6yP9SPrs"
+
+	var request protocol.AuthorizationRequestMessage = auth.CreateAuthorizationRequestWithMessage(
+		"Login to Polygon",
+		"Your Polygon ID",
+		audience,
+		uri,
+	)
+
+	request.ID = sessionId
+	request.ThreadID = sessionId
+
+	requestMap[sessionId] = request
+
+	hub.send <- Message{
+		Type: EventMessage,
+		ID:   ID(sessionId),
+		Event: Event{
+			Fn:     "getLoginQr",
+			Status: Done,
+			Data:   request,
+		},
+	}
+
+	msgBytes, _ := json.Marshal(request)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(msgBytes)
+}
+
+func LoginCallback(w http.ResponseWriter, r *http.Request) {
+	sessionId := r.URL.Query().Get("sessionId")
+
+	tokenBytes, _ := io.ReadAll(r.Body)
+	defer r.Body.Close()
+
+	authRequest, ok := requestMap[sessionId]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	hub.send <- Message{
+		Type: EventMessage,
+		ID:   ID(sessionId),
+		Event: Event{
+			Fn:     "handleLogin",
+			Status: InProgress,
+			Data:   authRequest,
+		},
+	}
+
+	ipfsURL := "https://ipfs.io"
+	contractAddress := "0x134B1BE34911E39A8397ec6289782989729807a4"
+	resolverPrefix := "polygon:mumbai"
+	keyDIR := "./keys"
+
+	var verificationKeyLoader = &loaders.FSKeyLoader{
+		Dir: keyDIR,
+	}
+
+	resolver := state.ETHResolver{
+		RPCUrl:          os.Getenv("RPC_URL_MUMBAI"),
+		ContractAddress: common.HexToAddress(contractAddress),
+	}
+
+	resolvers := map[string]pubsignals.StateResolver{
+		resolverPrefix: &resolver,
+	}
+
+	verifier, err := auth.NewVerifier(
+		verificationKeyLoader,
+		resolvers,
+		auth.WithIPFSGateway(ipfsURL),
+	)
+	if err != nil {
+		log.Println("1:", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	authResponse, err := verifier.FullVerify(
+		r.Context(),
+		string(tokenBytes),
+		authRequest.(protocol.AuthorizationRequestMessage),
+		pubsignals.WithAcceptedStateTransitionDelay(time.Minute*5),
+	)
+	if err != nil {
+		log.Println("2:", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	hub.send <- Message{
+		Type: EventMessage,
+		ID:   ID(sessionId),
+		Event: Event{
+			Fn:     "handleLogin",
+			Status: Done,
+			Data:   authResponse,
+		},
+	}
+
+	userID := authResponse.From
+
+	messageBytes := []byte("User with ID " + userID + " Successfully authenticated")
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(messageBytes)
+
+}
 
 func GetAuthRequest(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
@@ -116,7 +254,7 @@ func GetAuthRequest(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(msgBytes)
 }
 
-func Callback(w http.ResponseWriter, r *http.Request) {
+func VerificationCallback(w http.ResponseWriter, r *http.Request) {
 	sessionId := r.URL.Query().Get("sessionId")
 
 	tokenBytes, _ := io.ReadAll(r.Body)

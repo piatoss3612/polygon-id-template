@@ -42,11 +42,15 @@ function PolygonIDVerifier({
     ? publicServerURL
     : localServerURL;
 
-  const getQrCodeApi = (sessionId) =>
-    serverUrl + `/api/get-auth-qr?sessionId=${sessionId}`;
+  const getQrCodeApi = (sessionId) => {
+    if (credentialType === "Authorization") {
+      return serverUrl + `/api/get-login-qr?sessionId=${sessionId}`;
+    }
+
+    return serverUrl + `/api/get-auth-qr?sessionId=${sessionId}`;
+  }
 
   useEffect(() => {
-
     const _socket = new WebSocket("ws://" + "localhost:8080" + "/ws");
     socket.current = _socket;
 
@@ -102,7 +106,7 @@ function PolygonIDVerifier({
 
       console.log(currentSocketEvent)
 
-      if (currentSocketEvent.fn === "handleVerification") {
+      if (currentSocketEvent.fn === "handleVerification" || currentSocketEvent.fn === "handleLogin") {
         if (currentSocketEvent.status === "IN_PROGRESS") {
           setIsHandlingVerification(true);
         } else {
@@ -174,7 +178,7 @@ function PolygonIDVerifier({
                   </Center>
                 )}
 
-              {qrCodeData.body?.scope[0].query && (
+              {qrCodeData.body?.scope[0]?.query && (
                 <p>Type: {qrCodeData.body?.scope[0].query.type}</p>
               )}
 
