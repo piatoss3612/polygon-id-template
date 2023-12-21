@@ -56,7 +56,11 @@ func GetLoginRequest(w http.ResponseWriter, r *http.Request) {
 
 	sessionId := r.URL.Query().Get("sessionId")
 
-	log.Println("Session ID: ", sessionId)
+	_, err := uuid.Parse(sessionId)
+	if err != nil {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
 
 	hub.send <- Message{
 		Type: EventMessage,
@@ -68,18 +72,18 @@ func GetLoginRequest(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	uri := fmt.Sprintf("%s/api/login-callback?sessionId=%s",
+	callback := fmt.Sprintf("%s/api/login-callback?sessionId=%s",
 		os.Getenv("HOSTED_SERVER_URL"),
 		sessionId,
 	)
 
-	audience := "did:polygonid:polygon:mumbai:2qDyy1kEo2AYcP3RT4XGea7BtxsY285szg6yP9SPrs"
+	sender := "did:polygonid:polygon:mumbai:2qDyy1kEo2AYcP3RT4XGea7BtxsY285szg6yP9SPrs"
 
 	var request protocol.AuthorizationRequestMessage = auth.CreateAuthorizationRequestWithMessage(
 		"Login to Polygon",
 		"Your Polygon ID",
-		audience,
-		uri,
+		sender,
+		callback,
 	)
 
 	request.ID = sessionId
@@ -106,6 +110,12 @@ func GetLoginRequest(w http.ResponseWriter, r *http.Request) {
 
 func LoginCallback(w http.ResponseWriter, r *http.Request) {
 	sessionId := r.URL.Query().Get("sessionId")
+
+	_, err := uuid.Parse(sessionId)
+	if err != nil {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
 
 	tokenBytes, _ := io.ReadAll(r.Body)
 	defer r.Body.Close()
@@ -150,7 +160,6 @@ func LoginCallback(w http.ResponseWriter, r *http.Request) {
 		auth.WithIPFSGateway(ipfsURL),
 	)
 	if err != nil {
-		log.Println("1:", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -162,7 +171,6 @@ func LoginCallback(w http.ResponseWriter, r *http.Request) {
 		pubsignals.WithAcceptedStateTransitionDelay(time.Minute*5),
 	)
 	if err != nil {
-		log.Println("2:", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -183,8 +191,7 @@ func LoginCallback(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(messageBytes)
-
+	_, _ = w.Write(messageBytes)
 }
 
 func GetAuthRequest(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +199,11 @@ func GetAuthRequest(w http.ResponseWriter, r *http.Request) {
 
 	sessionId := r.URL.Query().Get("sessionId")
 
-	log.Println("Session ID: ", sessionId)
+	_, err := uuid.Parse(sessionId)
+	if err != nil {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
 
 	hub.send <- Message{
 		Type: EventMessage,
@@ -204,17 +215,17 @@ func GetAuthRequest(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	uri := fmt.Sprintf("%s/api/verification-callback?sessionId=%s",
+	callback := fmt.Sprintf("%s/api/verification-callback?sessionId=%s",
 		os.Getenv("HOSTED_SERVER_URL"),
 		sessionId,
 	)
 
-	audience := "did:polygonid:polygon:mumbai:2qDyy1kEo2AYcP3RT4XGea7BtxsY285szg6yP9SPrs"
+	sender := "did:polygonid:polygon:mumbai:2qDyy1kEo2AYcP3RT4XGea7BtxsY285szg6yP9SPrs"
 
 	var request protocol.AuthorizationRequestMessage = auth.CreateAuthorizationRequest(
 		"Must be born before this year",
-		audience,
-		uri,
+		sender,
+		callback,
 	)
 
 	request.ID = sessionId
@@ -258,6 +269,12 @@ func GetAuthRequest(w http.ResponseWriter, r *http.Request) {
 func VerificationCallback(w http.ResponseWriter, r *http.Request) {
 	sessionId := r.URL.Query().Get("sessionId")
 
+	_, err := uuid.Parse(sessionId)
+	if err != nil {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
+
 	tokenBytes, _ := io.ReadAll(r.Body)
 	defer r.Body.Close()
 
@@ -334,7 +351,7 @@ func VerificationCallback(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(messageBytes)
+	_, _ = w.Write(messageBytes)
 }
 
 var (
