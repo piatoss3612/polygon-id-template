@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"net/http"
 	"sync"
 	"time"
 
@@ -53,26 +51,13 @@ const (
 	maxMessageSize = 512
 )
 
-var (
-	allowOriginFunc = func(r *http.Request) bool {
-		return true
-	}
-
-	upgrader = websocket.Upgrader{
-		HandshakeTimeout: 5 * time.Second,
-		ReadBufferSize:   1024,
-		WriteBufferSize:  1024,
-		CheckOrigin:      allowOriginFunc,
-	}
-)
-
 type Client struct {
-	hub  *Hub
-	id   ID
-	conn *websocket.Conn
-	send chan Message
+	hub  *Hub            // The websocket hub
+	id   ID              // The client id
+	conn *websocket.Conn // The websocket connection
+	send chan Message    // Buffered channel of outbound messages
 
-	mu *sync.Mutex
+	mu *sync.Mutex // Mutex to lock the connection while writing
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -121,8 +106,8 @@ func (c *Client) writePump() {
 				return
 			}
 
-			fmt.Printf("Sending message: %+v\n", message)
-
+			// concurrent write to websocket connection is not allowed
+			// thus locking the connection before writing
 			c.mu.Lock()
 			err := c.conn.WriteJSON(message)
 			c.mu.Unlock()

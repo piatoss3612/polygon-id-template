@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 
 	"github.com/iden3/go-circuits/v2"
 	auth "github.com/iden3/go-iden3-auth/v2"
@@ -336,6 +337,19 @@ func VerificationCallback(w http.ResponseWriter, r *http.Request) {
 	w.Write(messageBytes)
 }
 
+var (
+	allowOriginFunc = func(r *http.Request) bool {
+		return true
+	}
+
+	upgrader = websocket.Upgrader{
+		HandshakeTimeout: 5 * time.Second,
+		ReadBufferSize:   1024,
+		WriteBufferSize:  1024,
+		CheckOrigin:      allowOriginFunc,
+	}
+)
+
 func ServeWs(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -353,10 +367,7 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 		mu:   &sync.Mutex{},
 	}
 
-	hub.register <- RegisterRequest{
-		ID:     ID(id),
-		Client: client,
-	}
+	hub.register <- client
 
 	go client.writePump()
 	go client.readPump()
